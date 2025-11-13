@@ -1,3 +1,5 @@
+mod analyzer;
+
 use rmcp::{
     handler::server::router::tool::ToolRouter,
     model::{CallToolResult, Content, ErrorData as McpError, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo},
