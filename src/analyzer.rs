@@ -164,7 +164,7 @@ impl Analyzer {
             .into_iter()
             .map(|nav| {
                 let file_id = nav.file_id;
-                let range = nav.focus_range.unwrap_or(nav.full_range);
+                let range = nav.full_range;
 
                 // Try to get the file path from VFS
                 let file_path = self.vfs.file_path(file_id);
@@ -172,22 +172,26 @@ impl Analyzer {
                     .map(|p| p.to_string())
                     .unwrap_or_else(|| format!("{:?}", file_id));
 
-                // Get file text to compute line/col
-                let text = analysis.file_text(file_id).ok();
-                let line_col = if let Some(text) = text {
+                // Get file text to compute line numbers
+                let (start_line, end_line) = if let Some(text) = analysis.file_text(file_id).ok() {
                     let line_index = ra_ap_ide::LineIndex::new(&text);
-                    line_index.line_col(range.start())
+                    let start = line_index.line_col(range.start());
+                    let end = line_index.line_col(range.end());
+                    (start.line, end.line)
                 } else {
-                    ra_ap_ide::LineCol { line: 0, col: 0 }
+                    (0, 0)
                 };
+
+                // Extract documentation
+                let documentation = nav.docs.as_ref().map(|d| d.as_str().to_string());
 
                 SymbolInfo {
                     name: nav.name.to_string(),
                     kind: convert_symbol_kind(nav.kind.unwrap_or(RaSymbolKind::Module)),
                     file_path: path_str,
-                    line: line_col.line,
-                    column: line_col.col,
-                    documentation: None, // TODO: Extract documentation
+                    start_line,
+                    end_line,
+                    documentation,
                 }
             })
             .collect();
@@ -222,15 +226,16 @@ impl Analyzer {
         let results = structure
             .into_iter()
             .map(|node| {
-                let line_col = line_index.line_col(node.node_range.start());
+                let start = line_index.line_col(node.node_range.start());
+                let end = line_index.line_col(node.node_range.end());
 
                 SymbolInfo {
                     name: node.label.clone(),
                     kind: SymbolKind::from_str(&format!("{:?}", node.kind)),
                     file_path: file_path.to_string(),
-                    line: line_col.line,
-                    column: line_col.col,
-                    documentation: None,
+                    start_line: start.line,
+                    end_line: end.line,
+                    documentation: node.detail.clone(),
                 }
             })
             .collect();
@@ -268,8 +273,8 @@ pub struct SymbolInfo {
     pub name: String,
     pub kind: SymbolKind,
     pub file_path: String,
-    pub line: u32,
-    pub column: u32,
+    pub start_line: u32,
+    pub end_line: u32,
     pub documentation: Option<String>,
 }
 
