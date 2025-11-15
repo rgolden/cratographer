@@ -23,11 +23,12 @@ impl CratographerServer {
     }
 
     /// Find all occurrences of a symbol by name across the indexed codebase
+    /// TODO: Expose search mode, include_library, and types_only parameters via MCP
     #[tool(description = "Find all occurrences of a Rust symbol (struct, enum, trait, function, method) by name")]
     async fn find_symbol(&self) -> Result<CallToolResult, McpError> {
-        // No-op implementation for now
+        // Placeholder - will be implemented with actual analyzer integration
         Ok(CallToolResult::success(vec![Content::text(
-            "find_symbol tool (not yet implemented)".to_string()
+            "find_symbol tool - search parameters (mode, include_library, types_only) added to analyzer API".to_string()
         )]))
     }
 

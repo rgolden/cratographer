@@ -10,6 +10,29 @@ use ra_ap_paths::{AbsPathBuf, Utf8PathBuf};
 use ra_ap_project_model::CargoConfig;
 use std::path::PathBuf;
 
+/// Search mode for symbol lookup
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchMode {
+    /// Exact match - symbol name must match exactly
+    Exact,
+    /// Fuzzy match - allows approximate matches (default)
+    #[default]
+    Fuzzy,
+    /// Prefix match - symbol name must start with the search string
+    Prefix,
+}
+
+/// Options for symbol search
+#[derive(Debug, Clone, Default)]
+pub struct SearchOptions {
+    /// Search mode (exact, fuzzy, or prefix)
+    pub mode: SearchMode,
+    /// Include symbols from library dependencies
+    pub include_library: bool,
+    /// Return only type symbols (structs, enums, traits, type aliases)
+    pub types_only: bool,
+}
+
 /// Error types for analyzer operations
 #[derive(Debug)]
 pub enum AnalyzerError {
@@ -21,6 +44,8 @@ pub enum AnalyzerError {
     IoError(std::io::Error),
     /// Canceled operation
     Canceled,
+    /// Unknown error
+    Other(String),
 }
 
 impl std::fmt::Display for AnalyzerError {
@@ -106,15 +131,33 @@ impl Analyzer {
     /// Find all occurrences of a symbol by name
     ///
     /// This searches across the entire workspace for symbols matching the given name.
-    pub fn find_symbol(&self, name: &str) -> Result<Vec<SymbolInfo>, AnalyzerError> {
+    pub fn find_symbol(&self, name: &str, options: &SearchOptions) -> Result<Vec<SymbolInfo>, AnalyzerError> {
         let analysis = self.host.analysis();
 
+        // Build the query with the specified options
+        let mut query = ra_ap_ide::Query::new(name.to_string());
+
+        // Apply search mode
+        match options.mode {
+            SearchMode::Exact => { query.exact(); },
+            SearchMode::Fuzzy => { query.fuzzy(); },
+            SearchMode::Prefix => { query.prefix(); },
+        }
+
+        // Apply library inclusion
+        if options.include_library {
+            query.libs();
+        }
+
+        // Apply types-only filter
+        if options.types_only {
+            query.only_types();
+        }
+
         // Use symbol_search to find all symbols matching the name
-        // Limit to 100 results
-        let symbols = analysis.symbol_search(
-            ra_ap_ide::Query::new(name.to_string()),
-            100
-        ).map_err(|_| AnalyzerError::Canceled)?;
+        // Limit to 1000 results
+        let symbols = analysis.symbol_search(query, 1000)
+            .map_err(|_| AnalyzerError::Canceled)?;
 
         // Convert to our SymbolInfo type
         let results = symbols
@@ -283,7 +326,8 @@ mod tests {
         assert!(result.is_ok(), "Failed to load project: {:?}", result.err());
 
         // Try to find the "Analyzer" struct we just defined
-        let symbols = analyzer.find_symbol("Analyzer");
+        let options = SearchOptions::default();
+        let symbols = analyzer.find_symbol("Analyzer", &options);
         assert!(symbols.is_ok(), "Failed to search for symbols: {:?}", symbols.err());
 
         let symbols = symbols.unwrap();
@@ -314,7 +358,8 @@ mod tests {
         assert!(result.is_ok(), "Failed to load project: {:?}", result.err());
 
         // Try to find the CratographerServer struct from main.rs
-        let symbols = analyzer.find_symbol("CratographerServer");
+        let options = SearchOptions::default();
+        let symbols = analyzer.find_symbol("CratographerServer", &options);
         assert!(symbols.is_ok(), "Failed to search for symbols: {:?}", symbols.err());
 
         let symbols = symbols.unwrap();
