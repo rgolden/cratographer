@@ -24,3 +24,9 @@ target
 # Added by cargo
 
 /target
+
+# Claude Code configuration
+.claude
+
+# Cargo.lock (not needed for libraries)
+Cargo.lock
