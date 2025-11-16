@@ -227,17 +227,23 @@ impl Analyzer {
         // Convert to our SymbolInfo type
         let results = structure
             .into_iter()
-            .map(|node| {
-                let start = line_index.line_col(node.node_range.start());
-                let end = line_index.line_col(node.node_range.end());
+            .filter_map(|node| {
+                // Only process nodes that have a SymbolKind
+                // Skip ExternBlock and Region variants
+                if let ra_ap_ide::StructureNodeKind::SymbolKind(kind) = node.kind {
+                    let start = line_index.line_col(node.node_range.start());
+                    let end = line_index.line_col(node.node_range.end());
 
-                SymbolInfo {
-                    name: node.label.clone(),
-                    kind: SymbolKind::from_str(&format!("{:?}", node.kind)),
-                    file_path: file_path.to_string(),
-                    start_line: start.line,
-                    end_line: end.line,
-                    documentation: node.detail.clone(),
+                    Some(SymbolInfo {
+                        name: node.label.clone(),
+                        kind: convert_symbol_kind(kind),
+                        file_path: file_path.to_string(),
+                        start_line: start.line,
+                        end_line: end.line,
+                        documentation: node.detail.clone(),
+                    })
+                } else {
+                    None
                 }
             })
             .collect();
@@ -255,17 +261,35 @@ impl Default for Analyzer {
 /// Convert rust-analyzer's SymbolKind to our SymbolKind
 fn convert_symbol_kind(kind: RaSymbolKind) -> SymbolKind {
     match kind {
-        RaSymbolKind::Function => SymbolKind::Function,
-        RaSymbolKind::Struct => SymbolKind::Struct,
-        RaSymbolKind::Enum => SymbolKind::Enum,
-        RaSymbolKind::Trait => SymbolKind::Trait,
-        RaSymbolKind::Module => SymbolKind::Module,
+        RaSymbolKind::Attribute => SymbolKind::Attribute,
+        RaSymbolKind::BuiltinAttr => SymbolKind::BuiltinAttr,
         RaSymbolKind::Const => SymbolKind::Const,
-        RaSymbolKind::Static => SymbolKind::Static,
-        RaSymbolKind::TypeAlias => SymbolKind::TypeAlias,
-        RaSymbolKind::Method => SymbolKind::Method,
+        RaSymbolKind::ConstParam => SymbolKind::ConstParam,
+        RaSymbolKind::Derive => SymbolKind::Derive,
+        RaSymbolKind::DeriveHelper => SymbolKind::DeriveHelper,
+        RaSymbolKind::Enum => SymbolKind::Enum,
         RaSymbolKind::Field => SymbolKind::Field,
-        _ => SymbolKind::Other,
+        RaSymbolKind::Function => SymbolKind::Function,
+        RaSymbolKind::Impl => SymbolKind::Impl,
+        RaSymbolKind::InlineAsmRegOrRegClass => SymbolKind::InlineAsmRegOrRegClass,
+        RaSymbolKind::Label => SymbolKind::Label,
+        RaSymbolKind::LifetimeParam => SymbolKind::LifetimeParam,
+        RaSymbolKind::Local => SymbolKind::Local,
+        RaSymbolKind::Macro => SymbolKind::Macro,
+        RaSymbolKind::Method => SymbolKind::Method,
+        RaSymbolKind::Module => SymbolKind::Module,
+        RaSymbolKind::ProcMacro => SymbolKind::ProcMacro,
+        RaSymbolKind::SelfParam => SymbolKind::SelfParam,
+        RaSymbolKind::SelfType => SymbolKind::SelfType,
+        RaSymbolKind::Static => SymbolKind::Static,
+        RaSymbolKind::Struct => SymbolKind::Struct,
+        RaSymbolKind::ToolModule => SymbolKind::ToolModule,
+        RaSymbolKind::Trait => SymbolKind::Trait,
+        RaSymbolKind::TypeAlias => SymbolKind::TypeAlias,
+        RaSymbolKind::TypeParam => SymbolKind::TypeParam,
+        RaSymbolKind::Union => SymbolKind::Union,
+        RaSymbolKind::ValueParam => SymbolKind::ValueParam,
+        RaSymbolKind::Variant => SymbolKind::Variant,
     }
 }
 
@@ -280,39 +304,40 @@ pub struct SymbolInfo {
     pub documentation: Option<String>,
 }
 
-/// Kind of symbol
+/// Kind of symbol - mirrors rust-analyzer's SymbolKind
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolKind {
-    Function,
-    Struct,
-    Enum,
-    Trait,
-    Module,
+    Attribute,
+    BuiltinAttr,
     Const,
-    Static,
-    TypeAlias,
-    Method,
+    ConstParam,
+    Derive,
+    DeriveHelper,
+    Enum,
     Field,
-    Other,
+    Function,
+    Impl,
+    InlineAsmRegOrRegClass,
+    Label,
+    LifetimeParam,
+    Local,
+    Macro,
+    Method,
+    Module,
+    ProcMacro,
+    SelfParam,
+    SelfType,
+    Static,
+    Struct,
+    ToolModule,
+    Trait,
+    TypeAlias,
+    TypeParam,
+    Union,
+    ValueParam,
+    Variant,
 }
 
-impl SymbolKind {
-    fn from_str(s: &str) -> Self {
-        match s {
-            "Function" => SymbolKind::Function,
-            "Struct" => SymbolKind::Struct,
-            "Enum" => SymbolKind::Enum,
-            "Trait" => SymbolKind::Trait,
-            "Module" => SymbolKind::Module,
-            "Const" => SymbolKind::Const,
-            "Static" => SymbolKind::Static,
-            "TypeAlias" => SymbolKind::TypeAlias,
-            "Method" => SymbolKind::Method,
-            "Field" => SymbolKind::Field,
-            _ => SymbolKind::Other,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -547,40 +572,80 @@ mod tests {
             println!("  - {} ({:?}) at lines {}-{}", sym.name, sym.kind, sym.start_line, sym.end_line);
         }
 
-        // Verify we found expected structs/enums by name
-        let expected_types = ["SearchMode", "SearchOptions", "Analyzer", "AnalyzerError", "SymbolInfo", "SymbolKind"];
-        for expected in &expected_types {
-            let found = symbols.iter().any(|s| s.name == *expected);
+        // Verify we found expected enums with correct kind
+        let expected_enums = ["SearchMode", "AnalyzerError", "SymbolKind"];
+        for expected in &expected_enums {
+            let found = symbols.iter().any(|s| {
+                s.name == *expected && s.kind == SymbolKind::Enum
+            });
             assert!(
                 found,
-                "Should find {} in analyzer.rs. Found symbols: {:?}",
-                expected,
-                symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
-            );
-        }
-
-        // Verify we found expected methods/functions by name
-        let expected_methods = ["find_symbol", "enumerate_file", "load_project", "new"];
-        for expected in &expected_methods {
-            let found = symbols.iter().any(|s| s.name == *expected);
-            assert!(
-                found,
-                "Should find {} method/function in analyzer.rs",
+                "Should find {} as Enum in analyzer.rs",
                 expected
             );
         }
 
-        // Verify we found the convert_symbol_kind function
-        let has_convert_fn = symbols.iter().any(|s| s.name == "convert_symbol_kind");
-        assert!(has_convert_fn, "Should find convert_symbol_kind function");
-
-        // Verify we found enum variants
-        let expected_variants = ["Exact", "Fuzzy", "Prefix"];
-        for expected in &expected_variants {
-            let found = symbols.iter().any(|s| s.name == *expected);
+        // Verify we found expected structs with correct kind
+        let expected_structs = ["SearchOptions", "Analyzer", "SymbolInfo"];
+        for expected in &expected_structs {
+            let found = symbols.iter().any(|s| {
+                s.name == *expected && s.kind == SymbolKind::Struct
+            });
             assert!(
                 found,
-                "Should find {} enum variant in analyzer.rs",
+                "Should find {} as Struct in analyzer.rs",
+                expected
+            );
+        }
+
+        // Verify we found expected methods
+        let expected_methods = ["find_symbol", "enumerate_file", "load_project"];
+        for expected in &expected_methods {
+            let found = symbols.iter().any(|s| {
+                s.name == *expected && s.kind == SymbolKind::Method
+            });
+            assert!(
+                found,
+                "Should find {} as Method in analyzer.rs",
+                expected
+            );
+        }
+
+        // Verify we found expected functions
+        let expected_functions = ["new", "convert_symbol_kind"];
+        for expected in &expected_functions {
+            let found = symbols.iter().any(|s| {
+                s.name == *expected && s.kind == SymbolKind::Function
+            });
+            assert!(
+                found,
+                "Should find {} as Function in analyzer.rs",
+                expected
+            );
+        }
+
+        // Verify we found enum variants with correct kind
+        let expected_variants = ["Exact", "Fuzzy", "Prefix"];
+        for expected in &expected_variants {
+            let found = symbols.iter().any(|s| {
+                s.name == *expected && s.kind == SymbolKind::Variant
+            });
+            assert!(
+                found,
+                "Should find {} as Variant in analyzer.rs",
+                expected
+            );
+        }
+
+        // Verify we found fields with correct kind
+        let expected_fields = ["host", "vfs", "mode", "include_library"];
+        for expected in &expected_fields {
+            let found = symbols.iter().any(|s| {
+                s.name == *expected && s.kind == SymbolKind::Field
+            });
+            assert!(
+                found,
+                "Should find {} as Field in analyzer.rs",
                 expected
             );
         }
