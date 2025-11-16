@@ -31,6 +31,13 @@ struct FindSymbolParams {
     types_only: Option<bool>,
 }
 
+/// Parameters for the enumerate_file tool
+#[derive(Serialize, Deserialize, JsonSchema)]
+struct EnumerateFileParams {
+    /// The absolute path to the file to enumerate
+    file_path: String,
+}
+
 /// Cratographer MCP Server
 /// Provides tools for indexing and querying Rust code symbols
 #[derive(Clone)]
@@ -119,11 +126,38 @@ impl CratographerServer {
 
     /// List all symbols defined in a specific file
     #[tool(description = "Enumerate all Rust symbols defined in a specific file")]
-    async fn enumerate_file(&self) -> Result<CallToolResult, McpError> {
-        // No-op implementation for now
-        Ok(CallToolResult::success(vec![Content::text(
-            "enumerate_file tool (not yet implemented)".to_string()
-        )]))
+    async fn enumerate_file(&self, params: Parameters<EnumerateFileParams>) -> Result<CallToolResult, McpError> {
+        let params = params.0;
+
+        // Enumerate symbols in the file
+        let analyzer = self.analyzer.lock().unwrap();
+        let results = analyzer.enumerate_file(&params.file_path)
+            .map_err(|e| McpError {
+                code: ErrorCode(-1),
+                message: format!("Failed to enumerate file: {}", e).into(),
+                data: None,
+            })?;
+
+        // Format results as JSON with only requested fields
+        let results_json: Vec<_> = results.iter().map(|sym| {
+            json!({
+                "name": sym.name,
+                "kind": format!("{:?}", sym.kind),
+                "start_line": sym.start_line,
+                "end_line": sym.end_line,
+            })
+        }).collect();
+
+        let summary = format!(
+            "Found {} symbol(s) in '{}'",
+            results.len(),
+            params.file_path
+        );
+
+        Ok(CallToolResult::success(vec![
+            Content::text(summary),
+            Content::text(serde_json::to_string_pretty(&results_json).unwrap()),
+        ]))
     }
 }
 
@@ -240,9 +274,22 @@ mod tests {
     #[tokio::test]
     async fn test_enumerate_file_returns_ok() {
         let server = CratographerServer::new().expect("Failed to create server");
-        let result = server.enumerate_file().await;
 
-        assert!(result.is_ok(), "enumerate_file should return Ok");
+        // Get the absolute path to analyzer.rs
+        let analyzer_path = std::env::current_dir()
+            .expect("Failed to get current directory")
+            .join("src/analyzer.rs")
+            .canonicalize()
+            .expect("Failed to canonicalize analyzer.rs path");
+
+        // Create parameters for enumerate_file
+        let params = Parameters(EnumerateFileParams {
+            file_path: analyzer_path.to_str().unwrap().to_string(),
+        });
+
+        let result = server.enumerate_file(params).await;
+
+        assert!(result.is_ok(), "enumerate_file should return Ok: {:?}", result.err());
         let tool_result = result.unwrap();
 
         // Check that we got content back
@@ -250,6 +297,9 @@ mod tests {
 
         // Verify it's a success result (not an error)
         assert!(!tool_result.is_error.unwrap_or(false), "Result should not be an error");
+
+        // Print the result for debugging
+        println!("Result: {:?}", tool_result.content);
     }
 
     #[test]
