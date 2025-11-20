@@ -22,6 +22,20 @@ pub enum SearchMode {
     Prefix,
 }
 
+/// Filter for symbol kind
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SymbolFilter {
+    /// Only type symbols (structs, enums, traits, type aliases)
+    Types,
+    /// Only implementation blocks
+    Implementations,
+    /// Only functions and methods
+    Functions,
+    /// All symbols (no filtering) - default
+    #[default]
+    All,
+}
+
 /// Options for symbol search
 #[derive(Debug, Clone, Default)]
 pub struct SearchOptions {
@@ -29,8 +43,8 @@ pub struct SearchOptions {
     pub mode: SearchMode,
     /// Include symbols from library dependencies
     pub include_library: bool,
-    /// Return only type symbols (structs, enums, traits, type aliases)
-    pub types_only: bool,
+    /// Filter by symbol kind
+    pub filter: SymbolFilter,
 }
 
 /// Error types for analyzer operations
@@ -151,8 +165,8 @@ impl Analyzer {
             query.libs();
         }
 
-        // Apply types-only filter
-        if options.types_only {
+        // Apply types-only filter if filtering by Types
+        if options.filter == SymbolFilter::Types {
             query.only_types();
         }
 
@@ -167,6 +181,29 @@ impl Analyzer {
             .filter_map(|nav| {
                 // Filter to only include symbol kinds we care about
                 let kind = convert_symbol_kind(nav.kind.unwrap_or(RaSymbolKind::Module))?;
+
+                // Apply post-search filtering based on SymbolFilter
+                match options.filter {
+                    SymbolFilter::Types => {
+                        // Types filter is handled by query.only_types() above
+                        // This should already be filtered, but we can double-check
+                    }
+                    SymbolFilter::Implementations => {
+                        // Only keep Impl blocks
+                        if kind != SymbolKind::Impl {
+                            return None;
+                        }
+                    }
+                    SymbolFilter::Functions => {
+                        // Only keep Function and Method
+                        if !matches!(kind, SymbolKind::Function | SymbolKind::Method) {
+                            return None;
+                        }
+                    }
+                    SymbolFilter::All => {
+                        // No filtering
+                    }
+                }
 
                 let file_id = nav.file_id;
                 let range = nav.full_range;
@@ -395,7 +432,7 @@ mod tests {
         let exact_options = SearchOptions {
             mode: SearchMode::Exact,
             include_library: false,
-            types_only: false,
+            filter: SymbolFilter::All,
         };
         let exact_results = analyzer.find_symbol("Analyzer", &exact_options);
         assert!(exact_results.is_ok(), "Exact search failed: {:?}", exact_results.err());
@@ -427,7 +464,7 @@ mod tests {
         let prefix_options = SearchOptions {
             mode: SearchMode::Prefix,
             include_library: false,
-            types_only: false,
+            filter: SymbolFilter::All,
         };
         let prefix_results = analyzer.find_symbol("Analyzer", &prefix_options);
         assert!(prefix_results.is_ok(), "Prefix search failed: {:?}", prefix_results.err());
@@ -470,7 +507,7 @@ mod tests {
         let no_lib_options = SearchOptions {
             mode: SearchMode::Exact,
             include_library: false,
-            types_only: false,
+            filter: SymbolFilter::All,
         };
         let no_lib_results = analyzer.find_symbol("HashMap", &no_lib_options);
         assert!(no_lib_results.is_ok(), "Search without library failed: {:?}", no_lib_results.err());
@@ -482,7 +519,7 @@ mod tests {
         let with_lib_options = SearchOptions {
             mode: SearchMode::Exact,
             include_library: true,
-            types_only: false,
+            filter: SymbolFilter::All,
         };
         let with_lib_results = analyzer.find_symbol("HashMap", &with_lib_options);
         assert!(with_lib_results.is_ok(), "Search with library failed: {:?}", with_lib_results.err());

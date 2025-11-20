@@ -1,6 +1,6 @@
 mod analyzer;
 
-use analyzer::{Analyzer, SearchMode, SearchOptions};
+use analyzer::{Analyzer, SearchMode, SearchOptions, SymbolFilter};
 use rmcp::{
     handler::server::{
         router::tool::ToolRouter,
@@ -26,9 +26,9 @@ struct FindSymbolParams {
     /// Whether to include library symbols in the search (default: false)
     #[serde(default)]
     include_library: Option<bool>,
-    /// Whether to search only for type symbols (structs, enums, traits) (default: false)
+    /// Filter by symbol kind: "types", "implementations", "functions", or "all" (default: "all")
     #[serde(default)]
-    types_only: Option<bool>,
+    filter: Option<String>,
 }
 
 /// Parameters for the enumerate_file tool
@@ -61,7 +61,7 @@ impl CratographerServer {
         let warmup_options = SearchOptions {
             mode: SearchMode::Exact,
             include_library: true,
-            types_only: true,
+            filter: SymbolFilter::Types,
         };
         if let Err(e) = analyzer.find_symbol("HashMap", &warmup_options) {
             eprintln!("Warning: Warm-up query failed: {}", e);
@@ -92,11 +92,26 @@ impl CratographerServer {
             }
         };
 
+        // Parse symbol filter from string
+        let filter = match params.filter.as_deref() {
+            Some("types") => SymbolFilter::Types,
+            Some("implementations") => SymbolFilter::Implementations,
+            Some("functions") => SymbolFilter::Functions,
+            Some("all") | None => SymbolFilter::All,
+            Some(other) => {
+                return Err(McpError {
+                    code: ErrorCode(-1),
+                    message: format!("Invalid filter: '{}'. Valid values: 'types', 'implementations', 'functions', 'all'", other).into(),
+                    data: None,
+                });
+            }
+        };
+
         // Build search options from parameters
         let options = SearchOptions {
             mode,
             include_library: params.include_library.unwrap_or(false),
-            types_only: params.types_only.unwrap_or(false),
+            filter,
         };
 
         // Perform the search (lock the analyzer)
@@ -121,12 +136,12 @@ impl CratographerServer {
         }).collect();
 
         let summary = format!(
-            "Found {} symbol(s) matching '{}' (mode: {:?}, library: {}, types_only: {})",
+            "Found {} symbol(s) matching '{}' (mode: {:?}, library: {}, filter: {:?})",
             results.len(),
             params.name,
             mode,
             options.include_library,
-            options.types_only
+            options.filter
         );
 
         Ok(CallToolResult::success(vec![
@@ -221,7 +236,7 @@ mod tests {
             name: "Analyzer".to_string(),
             mode: Some("fuzzy".to_string()),
             include_library: Some(false),
-            types_only: Some(false),
+            filter: Some("all".to_string()),
         });
 
         let result = server.find_symbol(params).await;
@@ -248,7 +263,7 @@ mod tests {
             name: "Analyzer".to_string(),
             mode: Some("exact".to_string()),
             include_library: Some(false),
-            types_only: Some(false),
+            filter: Some("all".to_string()),
         });
 
         let result = server.find_symbol(params).await;
@@ -271,7 +286,7 @@ mod tests {
             name: "HashMap".to_string(),
             mode: Some("exact".to_string()),
             include_library: Some(true),
-            types_only: Some(false),
+            filter: Some("all".to_string()),
         });
 
         let result = server.find_symbol(params).await;
