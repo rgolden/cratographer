@@ -46,7 +46,7 @@ Cratographer uses rust-analyzer's IDE APIs for semantic code analysis:
   - JSON Schema validation for tool parameters
   - Stdio transport for AI agent integration
 
-The current implementation loads the project once at startup. Future versions will support incremental updates to handle code changes efficiently.
+The implementation includes live file watching with incremental index updates. When source files change on disk, the index automatically updates without requiring server restarts, providing efficient re-indexing through rust-analyzer's ChangeWithProcMacros API.
 
 ## Use Cases
 
@@ -106,6 +106,8 @@ List all symbols defined in a specific file.
 - **Semantic analysis**: Uses rust-analyzer's IDE APIs (`ra_ap_ide`) for accurate type information
 - **Project loading**: Automatically loads Cargo workspaces with all targets
 - **VFS integration**: Maintains a virtual file system for efficient file access
+- **File watching**: Monitors source files for changes and updates the index incrementally
+- **Live updates**: Automatically re-indexes changed files without server restarts
 - **Symbol kinds**: Supports Const, Enum, Function, Impl, Method, Module, Static, Struct, Trait, and TypeAlias
 - **Error handling**: Comprehensive error types with clear messages
 
@@ -161,9 +163,9 @@ Once configured, the AI agent will have access to the `find_symbol` and `enumera
 - Implemented enumerate_file for listing file symbols
 - Comprehensive test suite with all tests passing
 - Support for library symbol search and type filtering
+- Live incremental index updates with file watching
 
 **Phase 3 - Advanced Features**: 📋 Planned
-- Incremental index updates on file changes
 - Enhanced cross-crate analysis and relationship mapping
 - Performance optimization for large workspaces
 - Additional symbol metadata (trait implementations, references)
